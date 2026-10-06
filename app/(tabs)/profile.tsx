@@ -10,14 +10,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 
-import { getProfile, updateProfile, Profile } from '../../lib/profiles';
-import { supabase } from '../../lib/supabase';
+import { getProfile, updateProfile, Profile } from '@/lib/profiles';
+import { supabase } from '@/lib/supabase';
 import AppButton from '@/components/AppButton';
 import { signOut } from '@/lib/auth';
 
 export default function ProfileScreen() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
   const [profile, setProfile] = useState<Profile | null>(null);
   const [draftName, setDraftName] = useState('');
   const [editing, setEditing] = useState(false);
@@ -29,7 +30,7 @@ export default function ProfileScreen() {
     try {
       await signOut();
       router.replace('/login');
-    } catch(err: any) {
+    } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to sign out.');
     } finally {
       setLoading(false);
@@ -95,6 +96,30 @@ export default function ProfileScreen() {
     }
   };
 
+  const getRoleLabel = () => {
+    if (profile?.role === 'admin') {
+      return 'Admin';
+    }
+
+    if (profile?.role === 'teacher') {
+      return 'Teacher';
+    }
+
+    return 'Student';
+  };
+
+  const getRoleBadgeStyle = () => {
+    if (profile?.role === 'admin') {
+      return styles.roleBadgeAdmin;
+    }
+
+    if (profile?.role === 'teacher') {
+      return styles.roleBadgeTeacher;
+    }
+
+    return styles.roleBadgeStudent;
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.card}>
@@ -103,31 +128,36 @@ export default function ProfileScreen() {
         <Text style={styles.label}>Name</Text>
 
         {editing ? (
-          <View style={styles.nameEditRow}>
-            <TextInput
-              style={styles.input}
-              value={draftName}
-              onChangeText={setDraftName}
-              placeholder="Enter your name"
-            />
+          <View style={styles.nameEditContainer}>
+            <View style={styles.nameEditRow}>
+              <TextInput
+                style={styles.input}
+                value={draftName}
+                onChangeText={setDraftName}
+                placeholder="Enter your name"
+                editable={!saving}
+              />
+
+              <Pressable
+                style={styles.saveButton}
+                onPress={handleSaveName}
+                disabled={saving}
+              >
+                <Text style={styles.saveText}>
+                  {saving ? 'Saving...' : 'Save'}
+                </Text>
+              </Pressable>
+            </View>
 
             <Pressable
-              style={styles.saveButton}
-              onPress={handleSaveName}
-              disabled={saving}
+              style={styles.cancelButton}
+              onPress={() => {
+                setEditing(false);
+                setDraftName(profile?.full_name ?? '');
+              }}
             >
-              <Text style={styles.saveText}>
-                {saving ? 'Saving...' : 'Save'}
-              </Text>
+              <Text style={styles.cancelText}>Cancel</Text>
             </Pressable>
-
-            <AppButton
-              title="Sign Out"
-              icon="log-out-outline"
-              onPress={handleSignOut}
-
-            />
-
           </View>
         ) : (
           <Pressable
@@ -144,20 +174,11 @@ export default function ProfileScreen() {
 
         <Text style={styles.label}>Role</Text>
 
-        {profile?.role === 'teacher' ? (
-          <View style={styles.roleBadge}>
-            <Text style={styles.roleBadgeText}>Teacher</Text>
-          </View>
-        ) : (
-          <View
-            style={[
-              styles.roleBadge,
-              styles.roleBadgeStudent,
-            ]}
-          >
-            <Text style={styles.roleBadgeText}>Student</Text>
-          </View>
-        )}
+        <View style={[styles.roleBadge, getRoleBadgeStyle()]}>
+          <Text style={styles.roleBadgeText}>
+            {getRoleLabel()}
+          </Text>
+        </View>
 
         <Text style={styles.label}>Email</Text>
 
@@ -170,6 +191,13 @@ export default function ProfileScreen() {
         <Text style={styles.userId}>
           {profile?.id || 'Loading...'}
         </Text>
+
+        <AppButton
+          title={loading ? 'Signing Out...' : 'Sign Out'}
+          icon="log-out-outline"
+          onPress={handleSignOut}
+          disabled={loading}
+        />
       </View>
     </SafeAreaView>
   );
@@ -231,6 +259,10 @@ const styles = StyleSheet.create({
     padding: 12,
   },
 
+  nameEditContainer: {
+    gap: 10,
+  },
+
   nameEditRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -251,15 +283,32 @@ const styles = StyleSheet.create({
 
   saveText: {
     fontWeight: 'bold',
-    color: '#DBE800',
+    color: '#000',
+  },
+
+  cancelButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+  },
+
+  cancelText: {
+    color: '#777',
+    fontWeight: '600',
   },
 
   roleBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: '#ffd33d',
     paddingVertical: 7,
     paddingHorizontal: 14,
     borderRadius: 20,
+  },
+
+  roleBadgeAdmin: {
+    backgroundColor: '#dbeafe',
+  },
+
+  roleBadgeTeacher: {
+    backgroundColor: '#dcfce7',
   },
 
   roleBadgeStudent: {
