@@ -43,9 +43,13 @@ export default function ScanScreen() {
       return;
     }
 
-    const result = await registerAttendance(data, user.id);
+    const result = await registerAttendance(data);
     if (result.success) {
-      setStatusMessage(`Success: ${result.message}`);
+      setStatusMessage('Attendance Recorded Successfully');
+    } else if (
+      result.message === 'Attendance already recorded for this event.'
+    ) {
+      setStatusMessage(result.message);
     } else {
       setStatusMessage(`Failed: ${result.message}`);
     }

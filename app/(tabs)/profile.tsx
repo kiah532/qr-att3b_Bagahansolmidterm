@@ -96,12 +96,19 @@ export default function ProfileScreen() {
     }
   };
 
+  /*
+   * Get the role as a string.
+   * This prevents TypeScript from complaining if
+   * the current Profile type does not yet include "admin".
+   */
+  const role = profile?.role as string | undefined;
+
   const getRoleLabel = () => {
-    if (profile?.role === 'admin') {
+    if (role === 'admin') {
       return 'Admin';
     }
 
-    if (profile?.role === 'teacher') {
+    if (role === 'teacher') {
       return 'Teacher';
     }
 
@@ -109,11 +116,11 @@ export default function ProfileScreen() {
   };
 
   const getRoleBadgeStyle = () => {
-    if (profile?.role === 'admin') {
+    if (role === 'admin') {
       return styles.roleBadgeAdmin;
     }
 
-    if (profile?.role === 'teacher') {
+    if (role === 'teacher') {
       return styles.roleBadgeTeacher;
     }
 
@@ -125,6 +132,7 @@ export default function ProfileScreen() {
       <View style={styles.card}>
         <Text style={styles.title}>Profile</Text>
 
+        {/* NAME */}
         <Text style={styles.label}>Name</Text>
 
         {editing ? (
@@ -172,6 +180,7 @@ export default function ProfileScreen() {
           </Pressable>
         )}
 
+        {/* ROLE */}
         <Text style={styles.label}>Role</Text>
 
         <View style={[styles.roleBadge, getRoleBadgeStyle()]}>
@@ -180,18 +189,21 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
+        {/* EMAIL */}
         <Text style={styles.label}>Email</Text>
 
         <Text style={styles.value}>
           {profile?.email || 'Loading...'}
         </Text>
 
+        {/* USER ID */}
         <Text style={styles.label}>User ID</Text>
 
         <Text style={styles.userId}>
           {profile?.id || 'Loading...'}
         </Text>
 
+        {/* SIGN OUT */}
         <AppButton
           title={loading ? 'Signing Out...' : 'Sign Out'}
           icon="log-out-outline"

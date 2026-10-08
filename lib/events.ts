@@ -13,6 +13,7 @@ export type CloudEvent = {
   title: string;
   start_time: string | null;
   end_time: string | null;
+  venue?: string | null;
   created_by: string | null;
   created_at: string;
 };
@@ -63,7 +64,11 @@ export async function getEventByCode(
     .eq('event_code', code)
     .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
     return null;
   }
 

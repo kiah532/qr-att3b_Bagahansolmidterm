@@ -9,6 +9,20 @@ export type AttendanceRecord = {
   scannedAt: string;
 };
 
+export type AdminAttendanceRecord = {
+  id: string;
+  studentId: string;
+  studentName: string | null;
+  studentEmail: string | null;
+  eventId: string;
+  eventTitle: string;
+  eventStartTime: string | null;
+  eventEndTime: string | null;
+  venue: string | null;
+  scannedAt: string;
+  status: string;
+};
+
 export type RegisterResult = {
   success: boolean;
   message: string;
@@ -36,8 +50,7 @@ export type TeacherEventSummary = {
 };
 
 export async function registerAttendance(
-  rawPayload: string,
-  studentId: string
+  rawPayload: string
 ): Promise<RegisterResult> {
   const parsed = parseQRPayload(rawPayload);
 
@@ -48,113 +61,109 @@ export async function registerAttendance(
     };
   }
 
-  const payload = parsed.payload;
-  const now = Date.now();
-
-  const start = payload.start
-    ? new Date(payload.start).getTime()
-    : null;
-
-  const end = payload.end
-    ? new Date(payload.end).getTime()
-    : null;
-
-  if (start !== null && now < start) {
-    return {
-      success: false,
-      message: 'Event has not started yet.',
-    };
-  }
-
-  if (end !== null && now > end) {
-    return {
-      success: false,
-      message: 'Event has already ended.',
-    };
-  }
-
-  const title = payload.title ?? payload.event;
-
-  let event: {
-    id: string;
-    title: string;
-  } | null = null;
-
-  const foundEvent = await getEventByCode(payload.event);
-
-  if (foundEvent) {
-    event = {
-      id: foundEvent.id,
-      title: foundEvent.title,
-    };
-  } else {
+  try {
     const {
-      data: newEvent,
-      error: insertError,
-    } = await supabase
-      .from('events')
-      .insert([
-        {
-          event_code: payload.event,
-          title,
-          start_time: payload.start ?? null,
-          end_time: payload.end ?? null,
-        },
-      ])
-      .select('id, title')
-      .single();
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-    if (insertError || !newEvent) {
-      console.error(
-        'Failed to create event:',
-        insertError
-      );
-
+    if (authError || !user) {
       return {
         success: false,
-        message: 'Could not create event.',
+        message: 'You must be logged in to register attendance.',
       };
     }
 
-    event = newEvent;
-  }
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
 
-  const { error: attendanceError } =
-    await supabase
-      .from('attendance')
-      .insert([
-        {
-          student_id: studentId,
-          event_id: event.id,
-        },
-      ]);
-
-  if (attendanceError) {
-    if (attendanceError.code === '23505') {
+    if (profileError) {
+      console.error('Failed to verify student role:', profileError);
       return {
         success: false,
-        message: 'Already registered for this event.',
+        message: 'Could not verify your account role.',
+      };
+    }
+
+    if (profile?.role !== 'student') {
+      return {
+        success: false,
+        message: 'Only student accounts can record attendance.',
+      };
+    }
+
+    const event = await getEventByCode(parsed.payload.event);
+
+    if (!event) {
+      return {
+        success: false,
+        message: 'Event not found. Please use a valid event QR code.',
+      };
+    }
+
+    const now = Date.now();
+    const start = event.start_time
+      ? new Date(event.start_time).getTime()
+      : null;
+    const end = event.end_time
+      ? new Date(event.end_time).getTime()
+      : null;
+
+    if (start !== null && now < start) {
+      return {
+        success: false,
+        message: 'Event has not started yet.',
         eventTitle: event.title,
       };
     }
 
-    console.error(
-      'Failed to record attendance:',
-      attendanceError
-    );
+    if (end !== null && now > end) {
+      return {
+        success: false,
+        message: 'Event has already ended.',
+        eventTitle: event.title,
+      };
+    }
+
+    const { error: attendanceError } = await supabase
+      .from('attendance')
+      .insert({
+        student_id: user.id,
+        event_id: event.id,
+      });
+
+    if (attendanceError) {
+      if (attendanceError.code === '23505') {
+        return {
+          success: false,
+          message: 'Attendance already recorded for this event.',
+          eventTitle: event.title,
+        };
+      }
+
+      console.error('Failed to record attendance:', attendanceError);
+      return {
+        success: false,
+        message: 'Could not record attendance. Please try again.',
+        eventTitle: event.title,
+      };
+    }
 
     return {
-      success: false,
-      message: attendanceError.message,
+      success: true,
+      message: 'Attendance Recorded Successfully',
       eventTitle: event.title,
     };
+  } catch (error) {
+    console.error('Failed to validate or record attendance:', error);
+    return {
+      success: false,
+      message: 'Could not verify or record attendance. Please try again.',
+    };
   }
-
-  return {
-    success: true,
-    message: 'Attendance recorded!',
-    eventTitle: event.title,
-  };
 }
 
 export async function getAttendanceHistory(
@@ -190,10 +199,73 @@ export async function getAttendanceHistory(
   return data.map((row: any) => ({
     id: row.id,
     eventId: row.event_id,
-    eventTitle:
-      row.events?.title ?? row.event_id,
+    eventTitle: row.events?.title ?? row.event_id,
     scannedAt: row.scanned_at,
   }));
+}
+
+export async function getAdminAttendanceRecords(): Promise<
+  AdminAttendanceRecord[]
+> {
+  const { data: attendance, error: attendanceError } = await supabase
+    .from('attendance')
+    .select(`
+      id,
+      student_id,
+      event_id,
+      scanned_at,
+      status,
+      events (
+        title,
+        start_time,
+        end_time,
+        venue
+      )
+    `)
+    .order('scanned_at', { ascending: false });
+
+  if (attendanceError) {
+    throw attendanceError;
+  }
+
+  if (!attendance?.length) {
+    return [];
+  }
+
+  const studentIds = [...new Set(attendance.map((row: any) => row.student_id))];
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', studentIds);
+
+  if (profilesError) {
+    throw profilesError;
+  }
+
+  const profilesById = new Map(
+    (profiles ?? []).map((profile) => [profile.id, profile])
+  );
+
+  return attendance.map((row: any) => {
+    const event = Array.isArray(row.events)
+      ? row.events[0]
+      : row.events;
+    const student = profilesById.get(row.student_id);
+
+    return {
+      id: row.id,
+      studentId: row.student_id,
+      studentName: student?.full_name ?? null,
+      studentEmail: student?.email ?? null,
+      eventId: row.event_id,
+      eventTitle: event?.title ?? row.event_id,
+      eventStartTime: event?.start_time ?? null,
+      eventEndTime: event?.end_time ?? null,
+      venue: event?.venue ?? null,
+      scannedAt: row.scanned_at,
+      status: row.status ?? 'present',
+    };
+  });
 }
 
 export async function getTeacherEventAttendance(

@@ -8,7 +8,6 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
@@ -18,97 +17,227 @@ import AppButton from '@/components/AppButton';
 import Header from '@/components/Header';
 import { COLORS } from '@/constants/colors';
 import { signIn } from '@/lib/auth';
+import { getProfile } from '@/lib/profiles';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
+    Keyboard.dismiss();
     setError(null);
+
+    const cleanEmail = email.trim();
+
+    // Check email
+    if (!cleanEmail) {
+      setError('Please enter your email.');
+      return;
+    }
+
+    // Check password
+    if (!password) {
+      setError('Please enter your password.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const { data, error: authError } = await signIn(email.trim(), password);
+      // SIGN IN
+      const { error: authError } = await signIn(
+        cleanEmail,
+        password
+      );
 
       if (authError) {
-        setError(authError.message);
-      } else {
-        router.replace('/(tabs)');
+        setError(authError.message || 'Invalid email or password.');
+        return;
       }
+
+      // Get currently logged-in user
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setError('Login successful, but user information could not be loaded.');
+        return;
+      }
+
+      // Get user's profile
+      const profile = await getProfile(user.id);
+
+      if (!profile) {
+        setError(
+          'Your account was found, but your profile could not be loaded.'
+        );
+        return;
+      }
+
+      // Get role
+      const role = String(profile.role || '').toLowerCase();
+
+      console.log('LOGIN USER:', user.email);
+      console.log('LOGIN ROLE:', role);
+
+      // =========================
+      // ADMIN
+      // =========================
+      if (role === 'admin') {
+        router.replace('/admin');
+        return;
+      }
+
+      // =========================
+      // TEACHER
+      // =========================
+      if (role === 'teacher') {
+        router.replace('/(tabs)');
+        return;
+      }
+
+      // =========================
+      // STUDENT
+      // =========================
+      router.replace('/(tabs)');
     } catch (err: any) {
-      setError(err?.message || 'Unexpected error');
+      console.error('LOGIN ERROR:', err);
+
+      setError(
+        err?.message ||
+          'Something went wrong while signing in.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View
+      style={[
+        styles.container,
+        {
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+        },
+      ]}
+    >
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.headerContainer}>
-              <Header title="QR Attendance" />
-            </View>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="always"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* HEADER */}
+          <View style={styles.headerContainer}>
+            <Header title="QR Attendance" />
+          </View>
 
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to record your attendance</Text>
+          {/* TITLE */}
+          <Text style={styles.title}>
+            Welcome Back
+          </Text>
 
-            <View style={styles.form}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                style={styles.input}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="your.email@school.edu"
-                placeholderTextColor={COLORS.textSecondary}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                editable={!loading}
-              />
+          <Text style={styles.subtitle}>
+            Sign in to record your attendance
+          </Text>
 
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Enter your password"
-                placeholderTextColor={COLORS.textSecondary}
-                secureTextEntry
-                editable={!loading}
-              />
+          {/* FORM */}
+          <View style={styles.form}>
+            {/* EMAIL */}
+            <Text style={styles.label}>
+              Email
+            </Text>
 
-              {error && <Text style={styles.error}>{error}</Text>}
+            <TextInput
+              style={styles.input}
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                setError(null);
+              }}
+              placeholder="your.email@school.edu"
+              placeholderTextColor="#999"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              editable={!loading}
+              returnKeyType="next"
+            />
 
-              {loading ? (
-                <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
-              ) : (
-                <AppButton
-                  theme="primary"
-                  title="Sign In"
-                  icon="log-in-outline"
-                  onPress={handleLogin}
+            {/* PASSWORD */}
+            <Text style={styles.label}>
+              Password
+            </Text>
+
+            <TextInput
+              style={styles.input}
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
+                setError(null);
+              }}
+              placeholder="Enter your password"
+              placeholderTextColor="#999"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!loading}
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
+            />
+
+            {/* ERROR */}
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.error}>
+                  {error}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* LOGIN BUTTON */}
+            {loading ? (
+              <View style={styles.loader}>
+                <ActivityIndicator
+                  size="large"
+                  color={COLORS.primary}
                 />
-              )}
-            </View>
 
-            <Link href="/register" style={styles.link}>
-              Don't have an account? Sign Up
-            </Link>
-          </ScrollView>
-        </TouchableWithoutFeedback>
+                <Text style={styles.loadingText}>
+                  Signing in...
+                </Text>
+              </View>
+            ) : (
+              <AppButton
+                theme="primary"
+                title="Sign In"
+                icon="log-in-outline"
+                onPress={handleLogin}
+              />
+            )}
+          </View>
+
+          {/* REGISTER */}
+          <Link
+            href="/register"
+            style={styles.link}
+          >
+            Don't have an account? Sign Up
+          </Link>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
@@ -119,36 +248,41 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+
   keyboardView: {
     flex: 1,
   },
+
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
+
   headerContainer: {
     alignItems: 'flex-start',
     marginTop: 20,
     marginBottom: 16,
   },
+
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: COLORS.textPrimary,
-    textAlign: 'left',
     marginBottom: 4,
   },
+
   subtitle: {
     fontSize: 15,
     lineHeight: 21,
     color: COLORS.textSecondary,
-    textAlign: 'left',
     marginBottom: 32,
   },
+
   form: {
     marginBottom: 24,
   },
+
   label: {
     fontSize: 14,
     fontWeight: '600',
@@ -156,30 +290,47 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginTop: 10,
   },
+
   input: {
-    backgroundColor: COLORS.card,
+    width: '100%',
+    height: 50,
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#CCCCCC',
     paddingHorizontal: 14,
-    paddingVertical: 12,
     fontSize: 16,
-    color: COLORS.textPrimary,
+    color: '#000000',
   },
+
+  errorBox: {
+    marginTop: 12,
+    marginBottom: 8,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+  },
+
   error: {
     fontSize: 14,
     color: COLORS.danger,
-    textAlign: 'left',
-    marginTop: 12,
-    marginBottom: 4,
   },
+
   loader: {
-    marginVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
   },
+
+  loadingText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+
   link: {
     fontSize: 14,
     color: COLORS.primary,
-    textAlign: 'left',
     fontWeight: '600',
   },
-});
+}); 
