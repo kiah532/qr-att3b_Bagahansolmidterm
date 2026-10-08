@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -11,112 +12,118 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-import { COLORS } from '../../constants/colors';
 import { signOut } from '../../lib/auth';
-import { getProfile, Profile } from '../../lib/profiles';
+import {
+  getAdminDashboardStats,
+  type AdminDashboardStats,
+} from '../../lib/events';
 import { supabase } from '../../lib/supabase';
 
-type ManagementRoute =
-  | '/admin/users'
-  | '/admin/events'
-  | '/admin/attendance'
-  | '/admin/reports';
+const initialStats: AdminDashboardStats = {
+  registeredUsers: 0,
+  totalEvents: 0,
+  attendanceScans: 0,
+  openEvents: 0,
+  closedEvents: 0,
+};
+
+const statItems: {
+  title: string;
+  field: keyof AdminDashboardStats;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { title: 'Registered Users', field: 'registeredUsers', icon: 'people-outline' },
+  { title: 'Total Events', field: 'totalEvents', icon: 'calendar-outline' },
+  { title: 'Attendance Scans', field: 'attendanceScans', icon: 'checkmark-done-outline' },
+  { title: 'Open Events', field: 'openEvents', icon: 'radio-button-on-outline' },
+];
 
 const managementItems: {
   title: string;
+  subtitle: string;
   icon: keyof typeof Ionicons.glyphMap;
-  route: ManagementRoute;
+  route: '/admin/users' | '/admin/events' | '/admin/attendance' | '/admin/reports';
 }[] = [
-  {
-    title: 'Manage Users',
-    icon: 'people-outline',
-    route: '/admin/users',
-  },
-  {
-    title: 'Manage Events',
-    icon: 'calendar-outline',
-    route: '/admin/events',
-  },
-  {
-    title: 'Attendance Records',
-    icon: 'document-text-outline',
-    route: '/admin/attendance',
-  },
-  {
-    title: 'Reports',
-    icon: 'bar-chart-outline',
-    route: '/admin/reports',
-  },
+  { title: 'Manage Users', subtitle: 'View registered accounts', icon: 'people-outline', route: '/admin/users' },
+  { title: 'Manage Events', subtitle: 'Create and manage events', icon: 'calendar-outline', route: '/admin/events' },
+  { title: 'Attendance Records', subtitle: 'Review QR attendance scans', icon: 'document-text-outline', route: '/admin/attendance' },
+  { title: 'Reports', subtitle: 'View system attendance summary', icon: 'bar-chart-outline', route: '/admin/reports' },
 ];
 
 export default function AdminDashboard() {
   const router = useRouter();
-
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [email, setEmail] = useState('');
+  const [stats, setStats] = useState(initialStats);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const loadAdminProfile = useCallback(async () => {
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    setRefreshing(true);
+
     try {
-      setLoading(true);
-
       const {
         data: { user },
+        error: authError,
       } = await supabase.auth.getUser();
-
+      if (authError) throw authError;
       if (!user) {
         router.replace('/login');
         return;
       }
 
-      const currentProfile = await getProfile(user.id);
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('email, role')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (profileError) throw profileError;
 
-      if (!currentProfile) {
-        Alert.alert('Error', 'Admin profile not found.');
-        router.replace('/login');
-        return;
-      }
-
-      const role = String(currentProfile.role || '').toLowerCase();
-
-      if (role !== 'admin') {
-        Alert.alert(
-          'Access Denied',
-          'This page is only available to administrators.'
-        );
+      if (profile?.role !== 'admin') {
         router.replace('/(tabs)');
         return;
       }
 
-      setProfile(currentProfile);
-    } catch (error: any) {
+      setEmail(profile.email || user.email || '');
+      setStats(await getAdminDashboardStats());
+    } catch (error) {
+      console.error('Failed to load admin dashboard:', error);
       Alert.alert(
         'Error',
-        error?.message || 'Failed to load admin profile.'
+        error instanceof Error
+          ? error.message
+          : 'Failed to load admin dashboard.'
       );
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [router]);
 
   useFocusEffect(
     useCallback(() => {
-      loadAdminProfile();
-    }, [loadAdminProfile])
+      void loadDashboard();
+    }, [loadDashboard])
   );
 
   const handleSignOut = async () => {
     try {
-      await signOut();
+      const { error } = await signOut();
+      if (error) throw error;
       router.replace('/login');
-    } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Failed to sign out.');
+    } catch (error) {
+      Alert.alert(
+        'Sign Out Error',
+        error instanceof Error ? error.message : 'Could not sign out.'
+      );
     }
   };
 
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading Administrator...</Text>
+        <ActivityIndicator size="large" color="#398653" />
+        <Text style={styles.loadingText}>Loading Admin Dashboard...</Text>
       </SafeAreaView>
     );
   }
@@ -127,203 +134,199 @@ export default function AdminDashboard() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.profileCard}>
-          <Text style={styles.adminTitle}>Administrator</Text>
-
-          <Text style={styles.label}>Email</Text>
-          <Text style={styles.value}>{profile?.email || 'No email'}</Text>
-
-          <Text style={styles.label}>Role</Text>
-          <Text style={styles.adminRole}>ADMIN</Text>
+        <View style={styles.header}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.brand}>QR ATTENDANCE</Text>
+            <Text style={styles.title}>Admin Dashboard</Text>
+            <Text style={styles.email}>{email}</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Refresh dashboard"
+              style={styles.iconButton}
+              onPress={() => void loadDashboard()}
+              disabled={refreshing}
+            >
+              {refreshing ? (
+                <ActivityIndicator size="small" color="#398653" />
+              ) : (
+                <Ionicons name="refresh-outline" size={21} color="#3C7650" />
+              )}
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              style={styles.logoutButton}
+              onPress={handleSignOut}
+            >
+              <Ionicons name="log-out-outline" size={19} color="#fff" />
+              <Text style={styles.logoutText}>Logout</Text>
+            </Pressable>
+          </View>
         </View>
 
-        <View style={styles.managementCard}>
-          <Text style={styles.sectionTitle}>System Management</Text>
+        <View style={styles.statsGrid}>
+          {statItems.map((item) => (
+            <View key={item.field} style={styles.statCard}>
+              <View style={styles.statIcon}>
+                <Ionicons name={item.icon} size={20} color="#398653" />
+              </View>
+              <Text style={styles.statValue}>{stats[item.field]}</Text>
+              <Text style={styles.statTitle}>{item.title}</Text>
+            </View>
+          ))}
+        </View>
 
+        <Text style={styles.sectionTitle}>System Management</Text>
+        <View style={styles.managementGrid}>
           {managementItems.map((item) => (
             <Pressable
               key={item.route}
               accessibilityRole="button"
               style={({ pressed }) => [
-                styles.menuItem,
-                pressed && styles.menuItemPressed,
+                styles.managementCard,
+                pressed && styles.cardPressed,
               ]}
               onPress={() => router.push(item.route)}
             >
-              <View style={styles.menuLeft}>
-                <Ionicons
-                  name={item.icon}
-                  size={22}
-                  color={styles.menuIcon.color}
-                />
-                <Text style={styles.menuText}>{item.title}</Text>
+              <View style={styles.managementIcon}>
+                <Ionicons name={item.icon} size={24} color="#398653" />
               </View>
-
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={styles.chevron.color}
-              />
+              <View style={styles.managementCopy}>
+                <Text style={styles.managementTitle}>{item.title}</Text>
+                <Text style={styles.managementSubtitle}>{item.subtitle}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#81877F" />
             </Pressable>
           ))}
         </View>
-
-        <Pressable
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.signOutButton,
-            pressed && styles.signOutPressed,
-          ]}
-          onPress={handleSignOut}
-        >
-          <Ionicons
-            name="log-out-outline"
-            size={20}
-            color={styles.signOutText.color}
-          />
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F3EA',
-  },
-
+  container: { flex: 1, backgroundColor: '#F4F6F3' },
   content: {
     width: '100%',
-    maxWidth: 760,
+    maxWidth: 1120,
     alignSelf: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 32,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 40,
   },
-
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F5F3EA',
+    gap: 12,
+    backgroundColor: '#F4F6F3',
   },
-
-  loadingText: {
-    fontSize: 16,
-    color: '#555',
-  },
-
-  profileCard: {
-    backgroundColor: '#FFFDF7',
-    borderRadius: 16,
-    padding: 22,
-    marginBottom: 18,
-    borderWidth: 1,
-    borderColor: '#E7E2D5',
-  },
-
-  adminTitle: {
-    fontSize: 23,
-    fontWeight: '700',
-    color: '#343434',
-    marginBottom: 20,
-  },
-
-  label: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#777',
-    marginBottom: 5,
-    marginTop: 8,
-  },
-
-  value: {
-    fontSize: 15,
-    color: '#444',
-    lineHeight: 22,
-  },
-
-  adminRole: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: COLORS.success,
-  },
-
-  managementCard: {
-    backgroundColor: '#FFFDF7',
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#E7E2D5',
-  },
-
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#3F3F3F',
-    marginBottom: 14,
-  },
-
-  menuItem: {
-    minHeight: 60,
-    borderWidth: 1,
-    borderColor: '#E5E0D5',
-    borderRadius: 11,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 10,
+  loadingText: { color: '#5B665E', fontSize: 15 },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFEFA',
+    gap: 16,
+    padding: 22,
+    backgroundColor: '#fff',
+    borderColor: '#E3E9E3',
+    borderWidth: 1,
+    borderRadius: 16,
+    marginBottom: 22,
   },
-
-  menuItemPressed: {
-    backgroundColor: '#F1EEE4',
-    opacity: 0.8,
+  headerCopy: { flex: 1 },
+  brand: {
+    color: '#398653',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.3,
+    marginBottom: 5,
   },
-
-  menuLeft: {
-    flex: 1,
-    flexDirection: 'row',
+  title: { color: '#243229', fontSize: 27, fontWeight: '800' },
+  email: { color: '#68746C', fontSize: 14, marginTop: 5 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#DDE6DE',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'center',
   },
-
-  menuIcon: {
-    color: '#555',
-  },
-
-  menuText: {
-    flexShrink: 1,
-    fontSize: 15,
-    color: '#444',
-    fontWeight: '600',
-  },
-
-  chevron: {
-    color: '#777',
-  },
-
-  signOutButton: {
-    minHeight: 56,
+  logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    marginTop: 12,
+    gap: 7,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    borderRadius: 11,
+    backgroundColor: '#398653',
   },
-
-  signOutPressed: {
-    opacity: 0.6,
+  logoutText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    marginBottom: 28,
   },
-
-  signOutText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#555',
+  statCard: {
+    flexGrow: 1,
+    flexBasis: 220,
+    minHeight: 142,
+    backgroundColor: '#fff',
+    borderColor: '#E3E9E3',
+    borderWidth: 1,
+    borderRadius: 15,
+    padding: 18,
   },
+  statIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    backgroundColor: '#EAF3EC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  statValue: { color: '#243229', fontSize: 27, fontWeight: '800' },
+  statTitle: { color: '#68746C', fontSize: 13, marginTop: 3 },
+  sectionTitle: {
+    color: '#26352B',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+  managementGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+  },
+  managementCard: {
+    flexGrow: 1,
+    flexBasis: 340,
+    minHeight: 92,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 18,
+    backgroundColor: '#fff',
+    borderColor: '#E3E9E3',
+    borderWidth: 1,
+    borderRadius: 15,
+  },
+  cardPressed: { backgroundColor: '#F0F6F1', opacity: 0.85 },
+  managementIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EAF3EC',
+  },
+  managementCopy: { flex: 1 },
+  managementTitle: { color: '#2F3C33', fontSize: 16, fontWeight: '700' },
+  managementSubtitle: { color: '#78827B', fontSize: 13, marginTop: 4 },
 });

@@ -15,6 +15,7 @@ export type AdminAttendanceRecord = {
   studentName: string | null;
   studentEmail: string | null;
   eventId: string;
+  eventCode: string;
   eventTitle: string;
   eventStartTime: string | null;
   eventEndTime: string | null;
@@ -101,6 +102,14 @@ export async function registerAttendance(
       return {
         success: false,
         message: 'Event not found. Please use a valid event QR code.',
+      };
+    }
+
+    if (event.status === 'closed') {
+      return {
+        success: false,
+        message: 'This event is closed and is not accepting attendance.',
+        eventTitle: event.title,
       };
     }
 
@@ -216,6 +225,7 @@ export async function getAdminAttendanceRecords(): Promise<
       scanned_at,
       status,
       events (
+        event_code,
         title,
         start_time,
         end_time,
@@ -258,6 +268,7 @@ export async function getAdminAttendanceRecords(): Promise<
       studentName: student?.full_name ?? null,
       studentEmail: student?.email ?? null,
       eventId: row.event_id,
+      eventCode: event?.event_code ?? row.event_id,
       eventTitle: event?.title ?? row.event_id,
       eventStartTime: event?.start_time ?? null,
       eventEndTime: event?.end_time ?? null,

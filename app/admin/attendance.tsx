@@ -148,6 +148,7 @@ export default function AttendanceRecordsScreen() {
       <View style={styles.divider} />
 
       <Text style={styles.eventTitle}>{item.eventTitle}</Text>
+      <Text style={styles.meta}>Event code: {item.eventCode}</Text>
       {item.eventStartTime ? (
         <Text style={styles.meta}>
           Event date: {formatDate(item.eventStartTime)}
@@ -173,11 +174,14 @@ export default function AttendanceRecordsScreen() {
           accessibilityRole="button"
           accessibilityLabel="Go back"
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => router.replace('/admin')}
         >
           <Ionicons name="arrow-back" size={24} color="#333" />
         </Pressable>
-        <Text style={styles.title}>Attendance Records</Text>
+        <View style={styles.headerCopy}>
+          <Text style={styles.title}>Attendance Records</Text>
+          <Text style={styles.subtitle}>View all QR attendance scans</Text>
+        </View>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Refresh attendance records"
@@ -201,6 +205,10 @@ export default function AttendanceRecordsScreen() {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View style={styles.filters}>
+            <View style={styles.totalCard}>
+              <Text style={styles.totalNumber}>{records.length}</Text>
+              <Text style={styles.totalLabel}>Total attendance scans</Text>
+            </View>
             <TextInput
               accessibilityLabel="Search student"
               style={styles.searchInput}
@@ -339,6 +347,8 @@ const styles = StyleSheet.create({
     color: '#333',
     marginLeft: 8,
   },
+  headerCopy: { flex: 1 },
+  subtitle: { color: '#748078', fontSize: 12, marginTop: 3, marginLeft: 8 },
   refreshButton: {
     width: 40,
     height: 40,
@@ -356,6 +366,19 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
+  totalCard: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 9,
+    backgroundColor: '#FFFDF9',
+    borderWidth: 1,
+    borderColor: '#E3DED2',
+    borderRadius: 11,
+    padding: 14,
+    marginBottom: 12,
+  },
+  totalNumber: { color: '#26352B', fontSize: 22, fontWeight: '800' },
+  totalLabel: { color: '#748078', fontSize: 13 },
   searchInput: {
     minHeight: 46,
     borderWidth: 1,
