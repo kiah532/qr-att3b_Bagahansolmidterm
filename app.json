@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "QR-ATT",
+    "slug": "QR-ATT",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "qr-attendance",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.iyah27.QRATT"
+    },
+    "web": {
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "owner": "qwzedekiah",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "80bb1b13-93d1-4d77-8b62-8446666f89f0"
+      }
+    }
+  }
+}
